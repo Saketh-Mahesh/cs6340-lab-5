@@ -1,0 +1,16 @@
+{
+    "name": "My Dev Environment",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                // Add any VS Code extensions you want pre-installed
+            ]
+        }
+    },
+    "postCreateCommand": "echo 'Environment ready!'",
+    "forwardPorts": []
+}
