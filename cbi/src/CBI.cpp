@@ -1,8 +1,7 @@
 /*
- * Copyright Â© 2021 Georgia Institute of Technology (Georgia Tech). All Rights Reserved.
- * Template code for CS 6340 Software Analysis
- * Instructors: Mayur Naik and Chris Poch
- * Head TAs: Kelly Parks and Joel Cooper
+ * Copyright Â© 2021 Georgia Institute of Technology (Georgia Tech). All Rights
+ * Reserved. Template code for CS 6340 Software Analysis Instructors: Mayur Naik
+ * and Chris Poch Head TAs: Kelly Parks and Joel Cooper
  *
  * Georgia Tech asserts copyright ownership of this template and all derivative
  * works, including solutions to the projects assigned in this course. Students
@@ -22,17 +21,70 @@
  * materials, such as tests, quizzes, homework, projects, videos, and any other
  * coursework, is prohibited in this course. */
 #include <cstdlib>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
 #include "Utils.h"
 
-/*
- * Implement your CBI report generator.
- */
-void generateReport() {
-  
+void constructPredicateSets(std::ifstream &File, bool isSuccess) {
+  std::string Line;
+  std::set<std::tuple<int, int, State>> truePredicates;
+  std::set<std::tuple<int, int, State>> observedPredicates;
 
+  while (std::getline(File, Line)) {
+    std::istringstream SS(Line);
+    std::string Type, LineNo, ColNo, Value;
+
+    std::getline(SS, Type, ',');
+    std::getline(SS, LineNo, ',');
+    std::getline(SS, ColNo, ',');
+    std::getline(SS, Value, ',');
+
+    int line = std::stoi(LineNo);
+    int col = std::stoi(ColNo);
+    int val = std::stoi(Value);
+    if (Type == "branch") {
+      if (val == 1) {
+        truePredicates.insert(std::make_tuple(line, col, BranchTrue));
+      } else {
+        truePredicates.insert(std::make_tuple(line, col, BranchFalse));
+      }
+    }
+
+    else if (Type == "return") {
+      if (val < 0) {
+        truePredicates.insert(std::make_tuple(line, col, ReturnNeg));
+      } else if (val == 0) {
+        truePredicates.insert(std::make_tuple(line, col, ReturnZero));
+      } else {
+        truePredicates.insert(std::make_tuple(line, col, ReturnPos));
+      }
+    }
+  }
+
+  if (isSuccess) {
+    for (const auto &element : truePredicates) {
+      S[element] += 1.0;
+    }
+    for (const auto &element : observedPredicates) {
+      SObs[element] += 1.0;
+    }
+  } else {
+    for (const auto &element : truePredicates) {
+      F[element] += 1.0;
+    }
+    for (const auto &element : observedPredicates) {
+      FObs[element] += 1.0;
+    }
+  }
+}
+
+void generateReport() {
+  for (const auto &element : FailureLogs) {
+    std::ifstream File(element);
+    constructPredicateSets(File, false);
+  }
 }
 
 // ./CBI [exe file] [fuzzer output dir]

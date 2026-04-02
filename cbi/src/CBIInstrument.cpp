@@ -36,13 +36,17 @@ FunctionType *getSanitizerFunctionType(LLVMContext &Context, unsigned numArgs) {
   return FunctionType::get(RetType, ArgTypes, false);
 }
 
+bool isIntegerType(Type *Ty) {
+  return Ty->isIntegerTy();
+}
+
 /*
  * Implement instrumentation for the branch scheme of CBI.
  */
 void instrumentCBIBranches(Module *M, Function &F, BranchInst &I) {
   LLVMContext &Context = M->getContext();
   FunctionType *FuncType = getSanitizerFunctionType(Context, 3);
-  auto CalleeFunc = M->getOrInsertFunction(*CBIBranchFunctionName, FuncType);
+  auto CalleeFunc = M->getOrInsertFunction(CBIBranchFunctionName, FuncType);
 
   DebugLoc loc = I.getDebugLoc();
 
@@ -53,7 +57,7 @@ void instrumentCBIBranches(Module *M, Function &F, BranchInst &I) {
     IRBuilder<> Builder(&I);
     llvm::Value *line = Builder.getInt32(raw_line);
     llvm::Value *col = Builder.getInt32(raw_col);
-    llvm::Value *cond = Builder.getInt32(I.getCondition());
+    llvm::Value *cond = Builder.CreateZExt(I.getCondition(), Builder.getInt32Ty());
 
     std::vector<Value *> Args;
     Args.push_back(line);
@@ -69,32 +73,36 @@ void instrumentCBIBranches(Module *M, Function &F, BranchInst &I) {
  * Implement instrumentation for the return scheme of CBI.
  */
 void instrumentCBIReturns(Module *M, Function &F, CallInst &I) {
+  if (!isIntegerType(I.getType())) return;
+
   LLVMContext &Context = M->getContext();
   FunctionType *FuncType = getSanitizerFunctionType(Context, 3);
-  auto CalleeFunc = M->getOrInsertFunction(*CBIReturnFunctionName, FuncType);
+  auto CalleeFunc = M->getOrInsertFunction(CBIReturnFunctionName, FuncType);
 
   DebugLoc loc = I.getDebugLoc();
   if (loc) {
     unsigned raw_line = loc.getLine();
     unsigned raw_col = loc.getCol();
 
-    llvm::Value *rv = I.getReturnValue();
-    if (rv != nullptr) {
-      IRBuilder<> Builder(&I);
-      llvm::Value *line = Builder.getInt32(raw_line);
-      llvm::Value *col = Builder.getInt32(raw_col);
+    IRBuilder<> Builder(I.getNextNode());
+    llvm::Value *line = Builder.getInt32(raw_line);
+    llvm::Value *col = Builder.getInt32(raw_col);
 
-      std::vector<Value *> Args;
-      Args.push_back(line);
-      Args.push_back(col);
-      Args.push_back(rv);
-
-      Builder.CreateCall(CalleeFunc, Args);
+    llvm::Value *rv = &I;
+    if (rv->getType() != Builder.getInt32Ty()) {
+      rv = Builder.CreateIntCast(rv, Builder.getInt32Ty(), false);
     }
+
+    std::vector<Value *> Args;
+    Args.push_back(line);
+    Args.push_back(col);
+    Args.push_back(rv);
+
+    Builder.CreateCall(CalleeFunc, Args);
   }
 }
 
-bool Instrument::runOnFunction(Function &F) {
+bool CBIInstrument::runOnFunction(Function &F) {
   LLVMContext &Context = F.getContext();
   Module *M = F.getParent();
 
@@ -107,7 +115,7 @@ bool Instrument::runOnFunction(Function &F) {
           instrumentCBIBranches(M, F, *BI);
         }
       }
-      if (auto *RI = dyn_cast<ReturnInst>(&I)) {
+      if (auto *RI = dyn_cast<CallInst>(&I)) {
         instrumentCBIReturns(M, F, *RI);
       }
     }
