@@ -27,89 +27,125 @@
 
 #include "Utils.h"
 
-void constructPredicateSets(std::ifstream &File, bool isSuccess) {
-  std::string Line;
-  std::set<std::tuple<int, int, State>> truePredicates;
-  std::set<std::tuple<int, int, State>> observedPredicates;
-
-  while (std::getline(File, Line)) {
-    std::istringstream SS(Line);
-    std::string Type, LineNo, ColNo, Value;
-
-    std::getline(SS, Type, ',');
-    std::getline(SS, LineNo, ',');
-    std::getline(SS, ColNo, ',');
-    std::getline(SS, Value, ',');
-
-    int line = std::stoi(LineNo);
-    int col = std::stoi(ColNo);
-    int val = std::stoi(Value);
+State getStateForValue(const std::string &Type, int Value) {
     if (Type == "branch") {
-      if (val == 1) {
-        truePredicates.insert(std::make_tuple(line, col, BranchTrue));
-      } else {
-        truePredicates.insert(std::make_tuple(line, col, BranchFalse));
-      }
+        return (Value == 1) ? State::BranchTrue : State::BranchFalse;
+    } else if (Type == "return") {
+        if (Value < 0) {
+            return State::ReturnNeg;
+        } else if (Value == 0) {
+            return State::ReturnZero;
+        } else {
+            return State::ReturnPos;
+        }
+    }
+    return State::BranchFalse;
+}
+
+void addBranchPredicates(
+    std::set<std::tuple<int, int, State>> &truePredicates,
+    std::set<std::tuple<int, int, State>> &observedPredicates, int line,
+    int col, int val) {
+    State S = getStateForValue("branch", val);
+    truePredicates.insert(std::make_tuple(line, col, S));
+    observedPredicates.insert(std::make_tuple(line, col, State::BranchFalse));
+    observedPredicates.insert(std::make_tuple(line, col, State::BranchTrue));
+}
+
+void addReturnPredicates(
+    std::set<std::tuple<int, int, State>> &truePredicates,
+    std::set<std::tuple<int, int, State>> &observedPredicates, int line,
+    int col, int val) {
+    observedPredicates.insert(std::make_tuple(line, col, State::ReturnNeg));
+    observedPredicates.insert(std::make_tuple(line, col, State::ReturnZero));
+    observedPredicates.insert(std::make_tuple(line, col, State::ReturnPos));
+
+    State S = getStateForValue("return", val);
+    truePredicates.insert(std::make_tuple(line, col, S));
+}
+
+void computeScores() {
+    
+}
+
+void constructPredicateSets(std::ifstream &File, bool isSuccess) {
+    std::string Line;
+    std::set<std::tuple<int, int, State>> truePredicates;
+    std::set<std::tuple<int, int, State>> observedPredicates;
+
+    while (std::getline(File, Line)) {
+        std::istringstream SS(Line);
+        std::string Type, LineNo, ColNo, Value;
+
+        std::getline(SS, Type, ',');
+        std::getline(SS, LineNo, ',');
+        std::getline(SS, ColNo, ',');
+        std::getline(SS, Value, ',');
+
+        int line = std::stoi(LineNo);
+        int col = std::stoi(ColNo);
+        int val = std::stoi(Value);
+
+        if (Type == "branch") {
+            addBranchPredicates(truePredicates, observedPredicates, line, col,
+                                val);
+        } else if (Type == "return") {
+            addReturnPredicates(truePredicates, observedPredicates, line, col,
+                                val);
+        }
     }
 
-    else if (Type == "return") {
-      if (val < 0) {
-        truePredicates.insert(std::make_tuple(line, col, ReturnNeg));
-      } else if (val == 0) {
-        truePredicates.insert(std::make_tuple(line, col, ReturnZero));
-      } else {
-        truePredicates.insert(std::make_tuple(line, col, ReturnPos));
-      }
+    if (isSuccess) {
+        for (const auto &element : truePredicates) {
+            S[element] += 1.0;
+        }
+        for (const auto &element : observedPredicates) {
+            SObs[element] += 1.0;
+        }
+    } else {
+        for (const auto &element : truePredicates) {
+            F[element] += 1.0;
+        }
+        for (const auto &element : observedPredicates) {
+            FObs[element] += 1.0;
+        }
     }
-  }
-
-  if (isSuccess) {
-    for (const auto &element : truePredicates) {
-      S[element] += 1.0;
-    }
-    for (const auto &element : observedPredicates) {
-      SObs[element] += 1.0;
-    }
-  } else {
-    for (const auto &element : truePredicates) {
-      F[element] += 1.0;
-    }
-    for (const auto &element : observedPredicates) {
-      FObs[element] += 1.0;
-    }
-  }
 }
 
 void generateReport() {
-  for (const auto &element : FailureLogs) {
-    std::ifstream File(element);
-    constructPredicateSets(File, false);
-  }
+    for (const auto &element : FailureLogs) {
+        std::ifstream File(element);
+        constructPredicateSets(File, false);
+    }
+    for (const auto &element : SuccessLogs) {
+        std::ifstream File(element);
+        constructPredicateSets(File, true);
+    }
 }
 
 // ./CBI [exe file] [fuzzer output dir]
 int main(int argc, char **argv) {
-  if (argc != 3) {
-    fprintf(stderr, "Invalid usage\n");
-    return 1;
-  }
+    if (argc != 3) {
+        fprintf(stderr, "Invalid usage\n");
+        return 1;
+    }
 
-  struct stat Buffer;
-  if (stat(argv[1], &Buffer)) {
-    fprintf(stderr, "%s not found\n", argv[1]);
-    return 1;
-  }
+    struct stat Buffer;
+    if (stat(argv[1], &Buffer)) {
+        fprintf(stderr, "%s not found\n", argv[1]);
+        return 1;
+    }
 
-  if (stat(argv[2], &Buffer)) {
-    fprintf(stderr, "%s not found\n", argv[2]);
-    return 1;
-  }
+    if (stat(argv[2], &Buffer)) {
+        fprintf(stderr, "%s not found\n", argv[2]);
+        return 1;
+    }
 
-  std::string Target(argv[1]);
-  std::string OutDir(argv[2]);
+    std::string Target(argv[1]);
+    std::string OutDir(argv[2]);
 
-  generateLogFiles(Target, OutDir);
-  generateReport();
-  printReport();
-  return 0;
+    generateLogFiles(Target, OutDir);
+    generateReport();
+    printReport();
+    return 0;
 }

@@ -1,2 +1,6 @@
 cbi/test
 cbi/build/CMakeFiles/
+build/CMakeFiles/
+build/.cmake
+.vscode
+build
