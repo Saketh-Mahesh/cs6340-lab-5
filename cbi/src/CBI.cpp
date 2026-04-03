@@ -21,16 +21,21 @@
  * materials, such as tests, quizzes, homework, projects, videos, and any other
  * coursework, is prohibited in this course. */
 #include <cstdlib>
+#include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unistd.h>
 
 #include "Utils.h"
 
+static const char *BRANCH_TYPE = "branch";
+static const char *RETURN_TYPE = "return";
+
 State getStateForValue(const std::string &Type, int Value) {
-    if (Type == "branch") {
+    if (Type == BRANCH_TYPE) {
         return (Value == 1) ? State::BranchTrue : State::BranchFalse;
-    } else if (Type == "return") {
+    } else if (Type == RETURN_TYPE) {
         if (Value < 0) {
             return State::ReturnNeg;
         } else if (Value == 0) {
@@ -42,11 +47,24 @@ State getStateForValue(const std::string &Type, int Value) {
     return State::BranchFalse;
 }
 
+void updatePredicateMaps(
+    std::set<std::tuple<int, int, State>> &truePredicates,
+    std::set<std::tuple<int, int, State>> &observedPredicates, bool isSuccess) {
+    auto &successCountMap = isSuccess ? S : F;
+    auto &successObsMap = isSuccess ? SObs : FObs;
+    for (const auto &element : truePredicates) {
+        successCountMap[element] += 1.0;
+    }
+    for (const auto &element : observedPredicates) {
+        successObsMap[element] += 1.0;
+    }
+}
+
 void addBranchPredicates(
     std::set<std::tuple<int, int, State>> &truePredicates,
     std::set<std::tuple<int, int, State>> &observedPredicates, int line,
     int col, int val) {
-    State S = getStateForValue("branch", val);
+    State S = getStateForValue(BRANCH_TYPE, val);
     truePredicates.insert(std::make_tuple(line, col, S));
     observedPredicates.insert(std::make_tuple(line, col, State::BranchFalse));
     observedPredicates.insert(std::make_tuple(line, col, State::BranchTrue));
@@ -59,13 +77,37 @@ void addReturnPredicates(
     observedPredicates.insert(std::make_tuple(line, col, State::ReturnNeg));
     observedPredicates.insert(std::make_tuple(line, col, State::ReturnZero));
     observedPredicates.insert(std::make_tuple(line, col, State::ReturnPos));
-
-    State S = getStateForValue("return", val);
+    State S = getStateForValue(RETURN_TYPE, val);
     truePredicates.insert(std::make_tuple(line, col, S));
 }
 
-void computeScores() {
-    
+std::set<std::tuple<int, int, State>> collectPredicateKeys() {
+    std::set<std::tuple<int, int, State>> allPredicateKeys;
+    for (const auto &m : {S, SObs, F, FObs}) {
+        for (const auto &[key, value] : m) {
+            allPredicateKeys.insert(key);
+        }
+    }
+
+    return allPredicateKeys;
+}
+
+void calculateMetrics(std::set<std::tuple<int, int, State>> &allPredicateKeys) {
+    for (const auto &key : allPredicateKeys) {
+        double failureDenom = F[key] + S[key];
+        if (failureDenom == 0) {
+            Failure[key] = 0.0;
+        } else {
+            Failure[key] = F[key] / failureDenom;
+        }
+        double contextDenom = FObs[key] + SObs[key];
+        if (contextDenom == 0) {
+            Context[key] = 0.0;
+        } else {
+            Context[key] = FObs[key] / contextDenom;
+        }
+        Increase[key] = Failure[key] - Context[key];
+    }
 }
 
 void constructPredicateSets(std::ifstream &File, bool isSuccess) {
@@ -76,7 +118,6 @@ void constructPredicateSets(std::ifstream &File, bool isSuccess) {
     while (std::getline(File, Line)) {
         std::istringstream SS(Line);
         std::string Type, LineNo, ColNo, Value;
-
         std::getline(SS, Type, ',');
         std::getline(SS, LineNo, ',');
         std::getline(SS, ColNo, ',');
@@ -86,30 +127,16 @@ void constructPredicateSets(std::ifstream &File, bool isSuccess) {
         int col = std::stoi(ColNo);
         int val = std::stoi(Value);
 
-        if (Type == "branch") {
+        if (Type == BRANCH_TYPE) {
             addBranchPredicates(truePredicates, observedPredicates, line, col,
                                 val);
-        } else if (Type == "return") {
+        } else if (Type == RETURN_TYPE) {
             addReturnPredicates(truePredicates, observedPredicates, line, col,
                                 val);
         }
     }
 
-    if (isSuccess) {
-        for (const auto &element : truePredicates) {
-            S[element] += 1.0;
-        }
-        for (const auto &element : observedPredicates) {
-            SObs[element] += 1.0;
-        }
-    } else {
-        for (const auto &element : truePredicates) {
-            F[element] += 1.0;
-        }
-        for (const auto &element : observedPredicates) {
-            FObs[element] += 1.0;
-        }
-    }
+    updatePredicateMaps(truePredicates, observedPredicates, isSuccess);
 }
 
 void generateReport() {
@@ -121,6 +148,10 @@ void generateReport() {
         std::ifstream File(element);
         constructPredicateSets(File, true);
     }
+
+    std::set<std::tuple<int, int, State>> allPredicateKeys =
+        collectPredicateKeys();
+    calculateMetrics(allPredicateKeys);
 }
 
 // ./CBI [exe file] [fuzzer output dir]
