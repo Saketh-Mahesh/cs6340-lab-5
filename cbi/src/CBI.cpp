@@ -32,14 +32,14 @@
 static const char *BRANCH_TYPE = "branch";
 static const char *RETURN_TYPE = "return";
 
-State getStateForValue(const std::string &Type, int Value) {
-    if (Type == BRANCH_TYPE) {
-        return (Value == 1) ? State::BranchTrue : State::BranchFalse;
-    } else if (Type == RETURN_TYPE) {
-        if (Value < 0) {
-            return State::ReturnNeg;
-        } else if (Value == 0) {
+State getStateForValue(const std::string &type, int value) {
+    if (type == BRANCH_TYPE) {
+        return (value == 1) ? State::BranchTrue : State::BranchFalse;
+    } else if (type == RETURN_TYPE) {
+        if (value == 0) {
             return State::ReturnZero;
+        } else if (value < 0) {
+            return State::ReturnNeg;
         } else {
             return State::ReturnPos;
         }
@@ -50,13 +50,13 @@ State getStateForValue(const std::string &Type, int Value) {
 void updatePredicateMaps(
     std::set<std::tuple<int, int, State>> &truePredicates,
     std::set<std::tuple<int, int, State>> &observedPredicates, bool isSuccess) {
-    auto &successCountMap = isSuccess ? S : F;
-    auto &successObsMap = isSuccess ? SObs : FObs;
+    auto &countMap = isSuccess ? S : F;
+    auto &obsMap = isSuccess ? SObs : FObs;
     for (const auto &element : truePredicates) {
-        successCountMap[element] += 1.0;
+        countMap[element] += 1.0;
     }
     for (const auto &element : observedPredicates) {
-        successObsMap[element] += 1.0;
+        obsMap[element] += 1.0;
     }
 }
 
@@ -64,8 +64,8 @@ void addBranchPredicates(
     std::set<std::tuple<int, int, State>> &truePredicates,
     std::set<std::tuple<int, int, State>> &observedPredicates, int line,
     int col, int val) {
-    State S = getStateForValue(BRANCH_TYPE, val);
-    truePredicates.insert(std::make_tuple(line, col, S));
+    State state = getStateForValue(BRANCH_TYPE, val);
+    truePredicates.insert(std::make_tuple(line, col, state));
     observedPredicates.insert(std::make_tuple(line, col, State::BranchFalse));
     observedPredicates.insert(std::make_tuple(line, col, State::BranchTrue));
 }
@@ -77,8 +77,8 @@ void addReturnPredicates(
     observedPredicates.insert(std::make_tuple(line, col, State::ReturnNeg));
     observedPredicates.insert(std::make_tuple(line, col, State::ReturnZero));
     observedPredicates.insert(std::make_tuple(line, col, State::ReturnPos));
-    State S = getStateForValue(RETURN_TYPE, val);
-    truePredicates.insert(std::make_tuple(line, col, S));
+    State state = getStateForValue(RETURN_TYPE, val);
+    truePredicates.insert(std::make_tuple(line, col, state));
 }
 
 std::set<std::tuple<int, int, State>> collectPredicateKeys() {
@@ -117,20 +117,20 @@ void constructPredicateSets(std::ifstream &File, bool isSuccess) {
 
     while (std::getline(File, Line)) {
         std::istringstream SS(Line);
-        std::string Type, LineNo, ColNo, Value;
-        std::getline(SS, Type, ',');
-        std::getline(SS, LineNo, ',');
-        std::getline(SS, ColNo, ',');
-        std::getline(SS, Value, ',');
+        std::string type, lineNum, colNum, value;
+        std::getline(SS, type, ',');
+        std::getline(SS, lineNum, ',');
+        std::getline(SS, colNum, ',');
+        std::getline(SS, value, ',');
 
-        int line = std::stoi(LineNo);
-        int col = std::stoi(ColNo);
-        int val = std::stoi(Value);
+        int line = std::stoi(lineNum);
+        int col = std::stoi(colNum);
+        int val = std::stoi(value);
 
-        if (Type == BRANCH_TYPE) {
+        if (type == BRANCH_TYPE) {
             addBranchPredicates(truePredicates, observedPredicates, line, col,
                                 val);
-        } else if (Type == RETURN_TYPE) {
+        } else if (type == RETURN_TYPE) {
             addReturnPredicates(truePredicates, observedPredicates, line, col,
                                 val);
         }
